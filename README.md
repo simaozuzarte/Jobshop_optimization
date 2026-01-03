@@ -309,4 +309,4 @@ Check `JSPLIB/instances.json` for known optimum values and bounds.
 
 Daniel Dória Pinto - up202108808@up.pt  
 Leonor Filipe Fragoso e Santos - up@up.pt  
-Simão Zuzarte Bernardo - up@up.pt
+Simão Zuzarte Bernardo - up202502529@up.pt
