@@ -2,7 +2,7 @@
 
 A Mixed Integer Programming (MIP) solver for the **Job Shop Scheduling Problem (JSP)** using Python and PuLP. This project minimizes the makespan (total completion time) for scheduling jobs across multiple machines.
 
----
+<br>
 
 ## 📋 Table of Contents
 
@@ -17,13 +17,13 @@ A Mixed Integer Programming (MIP) solver for the **Job Shop Scheduling Problem (
 - [TODOs](#todos)
 - [References](#references)
 
----
+<br>
 
 ## 🎯 Overview
 
 This project implements a **MIP-based solver** for the classic Job Shop Scheduling Problem using the [PuLP](https://coin-or.github.io/pulp/) library with the CBC solver. It reads benchmark instances from the JSPLIB library and finds optimal or near-optimal schedules.
 
----
+<br>
 
 ## 📝 Problem Description
 
@@ -35,7 +35,7 @@ The **Job Shop Scheduling Problem (JSP)** is a combinatorial optimization proble
 - Each machine can process only one operation at a time
 - The goal is to **minimize the makespan** (the time when all jobs are completed)
 
----
+<br>
 
 ## 📁 Project Structure
 
@@ -56,8 +56,7 @@ PROJ_SAAD/
     │   └── yn1-4             # Yamada-Nakano instances
     └── script/               # Helper scripts for loading instances
 ```
-
----
+<br>
 
 ## ⚙️ Installation
 
@@ -72,42 +71,138 @@ PROJ_SAAD/
 pip install pulp
 ```
 
----
+<br>
 
 ## 🚀 Usage
 
-### Running the Solver
+### Quick Start
 
-```python
-python jsp_solver.py
+The solver uses **command-line arguments** to specify which instances to solve and how to configure the solver. You must provide either `-i` (specific files) or `-p` (pattern matching).
+
+### Basic Commands
+
+```bash
+# Solve a single instance
+python jsp_solver.py -i JSPLIB/instances/abz5
+
+# Solve multiple specific instances
+python jsp_solver.py -i JSPLIB/instances/abz5 JSPLIB/instances/ft06 JSPLIB/instances/la01
+
+# Solve all instances matching a pattern (use quotes)
+python jsp_solver.py -p "JSPLIB/instances/la*"
+
+# Solve ALL instances (warning: 130+ files, takes hours!)
+python jsp_solver.py -p "JSPLIB/instances/*"
 ```
 
-### Modifying Instances to Solve
+### Advanced Options
 
-Edit the `instances` list in the script to select which benchmarks to solve:
+```bash
+# Adjust time limit per instance (in seconds)
+python jsp_solver.py -i JSPLIB/instances/abz5 -t 60
 
-```python
-instances = [
-    "JSPLIB/instances/abz5",
-    "JSPLIB/instances/ft06",
-    "JSPLIB/instances/la01",
-    # Add more instances here
-]
+# Set tighter optimality gap (5% instead of default 10%)
+python jsp_solver.py -i JSPLIB/instances/abz5 -g 0.05
+
+# Show detailed solver output during optimization
+python jsp_solver.py -i JSPLIB/instances/abz5 --verbose
+
+# Minimal output mode (only final results)
+python jsp_solver.py -i JSPLIB/instances/abz5 --quiet
+
+# Combine multiple options
+python jsp_solver.py -p "JSPLIB/instances/ft*" -t 120 -g 0.05 --verbose
 ```
 
-### Output
+### Command-Line Arguments
 
-The solver outputs for each instance:
-- **Status**: Optimal, Feasible, Infeasible, etc.
-- **Makespan**: The total completion time found
-- **Time**: Computation time in seconds
+| Argument | Short | Description | Default |
+|----------|-------|-------------|---------|
+| `--instances` | `-i` | List of instance file paths | Required* |
+| `--pattern` | `-p` | Glob pattern to match files (e.g., `"la*"`) | Required* |
+| `--time-limit` | `-t` | Max seconds per instance | 300 |
+| `--gap` | `-g` | MIP gap tolerance (0.1 = 10%) | 0.1 |
+| `--verbose` | `-v` | Show CBC solver output | False |
+| `--quiet` | `-q` | Suppress progress messages | False |
+| `--help` | `-h` | Display help message | - |
 
-Example output:
+\* Either `-i` or `-p` is required (mutually exclusive)
+
+### How It Works
+
+1. **Reading**: The solver reads JSPLIB instance files and parses job/machine data
+2. **Model Building**: Constructs a Mixed Integer Programming model with:
+   - Decision variables for start times and job sequencing
+   - Constraints for job precedence and machine capacity
+   - Objective to minimize makespan
+3. **Solving**: Calls the CBC solver with specified time/gap limits
+4. **Reporting**: Outputs status, makespan, and runtime
+
+### Output Format
+
+#### Standard Mode (default)
+Shows progress for each instance with real-time updates:
+
+```
+Solving 2 instance(s)...
+Settings: time_limit=300s, gap=10.0%
+------------------------------------------------------------
+
+[1/2] Solving: JSPLIB/instances/abz5
+  → Reading instance and building model...
+  → Model: 150 variables, 300 constraints
+  → Solving with CBC (time limit: 300s, gap: 10.0%)...
+  ✓ Finished in 45.23s
+  Result: {'instance': 'JSPLIB/instances/abz5', 'status': 'Optimal', 'makespan': 1234.0, 'time': 45.23}
+
+[2/2] Solving: JSPLIB/instances/ft06
+  → Reading instance and building model...
+  → Model: 42 variables, 84 constraints
+  → Solving with CBC (time limit: 300s, gap: 10.0%)...
+  ✓ Finished in 2.15s
+  Result: {'instance': 'JSPLIB/instances/ft06', 'status': 'Optimal', 'makespan': 55.0, 'time': 2.15}
+
+============================================================
+SUMMARY
+============================================================
+Solved: 2/2
+Total time: 47.38s
+```
+
+#### Quiet Mode (`--quiet`)
+Only prints final results (one per line):
+
 ```
 {'instance': 'JSPLIB/instances/abz5', 'status': 'Optimal', 'makespan': 1234.0, 'time': 45.23}
+{'instance': 'JSPLIB/instances/ft06', 'status': 'Optimal', 'makespan': 55.0, 'time': 2.15}
 ```
 
----
+#### Verbose Mode (`--verbose`)
+Shows CBC solver log with search tree progress, cuts, and branching decisions.
+
+### Result Fields
+
+Each result dictionary contains:
+- **`instance`**: Path to the instance file
+- **`status`**: Solver status (Optimal, Feasible, Infeasible, Not Solved, Undefined)
+- **`makespan`**: Objective value (total completion time), or `None` if unsolved
+- **`time`**: Wall-clock time in seconds
+
+### Interrupting Execution
+
+Press **Ctrl+C** to gracefully stop execution. The solver will:
+- Display how many instances were completed
+- Show total elapsed time
+- Report partial results
+
+```
+^C
+⚠ Interrupted by user (Ctrl+C)
+Completed 3/10 instance(s) in 145.67s
+Solved before interruption: 2/3
+```
+
+<br>
 
 ## 📄 Instance Format
 
@@ -128,7 +223,7 @@ Instance files follow the JSPLIB standard format:
 1 4 2 3 0 1    # Job 2: M1(4) → M2(3) → M0(1)
 ```
 
----
+<br>
 
 ## 🔢 Mathematical Model
 
@@ -154,7 +249,7 @@ $$\min C_{max}$$
 3. **Makespan Definition**: 
    $$C_{max} \geq S_{j,m_{last}} + p_{j,m_{last}} \quad \forall j$$
 
----
+<br>
 
 ## 📊 Benchmark Instances
 
@@ -172,13 +267,12 @@ The JSPLIB library includes **130+ benchmark instances** from the literature:
 
 Check `JSPLIB/instances.json` for known optimum values and bounds.
 
----
+<br>
 
 ## ✅ TODOs
 
-### High Priority
-- [ ] **Rename `test.py` → `jsp_solver.py`** - More descriptive name
-- [ ] **Add command-line argument parsing** - Use `argparse` to specify instances, time limits, etc.
+- [x] **Rename `test.py` → `jsp_solver.py`** - More descriptive name
+- [x] **Add command-line argument parsing** - Use `argparse` to specify instances, time limits, etc.
 - [ ] **Improve Big-M calculation** - Currently hardcoded as 10000; should be computed dynamically
 - [ ] **Add solution validation** - Verify that the solution respects all constraints
 - [ ] **Export schedule visualization** - Generate Gantt charts for the solution
@@ -199,7 +293,7 @@ Check `JSPLIB/instances.json` for known optimum values and bounds.
 - [ ] **Add progress callback** - Report intermediate solutions during solving
 - [ ] **Parallelize solving** - Solve multiple instances concurrently
 
----
+<br>
 
 ## 📚 References
 
@@ -209,30 +303,10 @@ Check `JSPLIB/instances.json` for known optimum values and bounds.
 4. Applegate, D., Cook, W. (1991). "A computational study of job-shop scheduling." *ORSA Journal on Computing*, 3(2), 149-156.
 5. Taillard, E. (1993). "Benchmarks for basic scheduling problems." *European Journal of Operational Research*, 64(2), 278-285.
 
----
+<br>
 
-## 📜 License
+## 👤 Authors
 
-This project is for educational purposes (SAAD course project).
-
----
-
-## 👤 Author
-
-To create a new line in markdown, use one of these methods:
-
-1. **Two spaces + Enter**: Add two spaces at the end of a line, then press Enter
-2. **`<br>` tag**: Insert `<br>` for an HTML line break
-3. **Blank line**: Press Enter twice to create a paragraph break
-
-For your selection placeholder, use:
-
-```
 Daniel Dória Pinto - up202108808@up.pt  
 Leonor Filipe Fragoso e Santos - up@up.pt  
-Simão Zuzarte Bernardo - up@up.pt
-```
-
-(Two spaces at the end of each line before the next name)
-Leonor Filipe Fragoso e Santos - up@up.pt \nl
 Simão Zuzarte Bernardo - up@up.pt
