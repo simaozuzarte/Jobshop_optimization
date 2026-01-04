@@ -62,13 +62,14 @@ PROJ_SAAD/
 
 ### Prerequisites
 
-- Python 3.7+
+- **Python 3.12 or lower** (Required for OR-Tools compatibility. OR-Tools does not support Python 3.13+)
 - pip package manager
 
 ### Install Dependencies
 
 ```bash
 pip install pulp
+pip install ortools
 ```
 
 <br>

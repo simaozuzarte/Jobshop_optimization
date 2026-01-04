@@ -249,7 +249,7 @@ def build_cp_model(n_jobs, n_machines, jobs, p):
 def solve_mip_instance(file_path, time_limit=300, gap=0.1, verbose=True, quiet=False):
     """Solve a single JSP instance and return results."""
     if not quiet:
-        print(f" [MIP]Reading instance and building model...", flush=True)
+        print(f" [MIP] Reading instance and building model...", flush=True)
     
     n_jobs, n_machines, jobs, p = read_jsplib_instance(file_path)
     prob, C_max, S, x = build_mip_model(n_jobs, n_machines, jobs, p)
