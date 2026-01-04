@@ -275,13 +275,13 @@ Check `JSPLIB/instances.json` for known optimum values and bounds.
 - [x] **Add command-line argument parsing** - Use `argparse` to specify instances, time limits, etc.
 - [ ] **Improve Big-M calculation** - Currently hardcoded as 10000; should be computed dynamically
 - [ ] **Add solution validation** - Verify that the solution respects all constraints
-- [ ] **Export schedule visualization** - Generate Gantt charts for the solution
+- [x] **Export schedule visualization** - Generate Gantt charts for the solution
 
 ### Medium Priority
 - [ ] **Add logging module** - Replace `print()` with proper logging
 - [ ] **Load optimum values from `instances.json`** - Compare solver results with known optima
 - [ ] **Calculate optimality gap** - Report `(found - optimum) / optimum × 100%`
-- [ ] **Save results to CSV/JSON** - Export batch results for analysis
+- [x] **Save results to CSV/JSON** - Export batch results for analysis
 - [ ] **Add solution extraction** - Output the actual schedule (start times per operation)
 
 ### Low Priority / Enhancements
