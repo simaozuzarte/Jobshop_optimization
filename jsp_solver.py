@@ -108,6 +108,8 @@ Examples:
         "--gantt", 
         action="store_true", 
         help="Generate Gantt chart visualizations")
+    
+    
 
     return parser.parse_args()
 
@@ -136,18 +138,54 @@ def read_jsplib_instance(file_path):
 
     return n_jobs, n_machines, jobs, p
 
+def compute_time_bounds(n_jobs, n_machines, jobs, p):
+    """Compute time bounds for the instance."""
+    # Lower bound: maximum machine workload or maximum job length
+    max_job_length = max(sum(duration for _, duration in jobs[j]) for j in range(n_jobs))
+    max_machine_load = 0
+    for m in range(n_machines):
+        machine_load = sum(p[(j, m)] for j in range(n_jobs) if (j, m) in p)
+        max_machine_load = max(max_machine_load, machine_load)
+    
+    lower_bound = max(max_job_length, max_machine_load)
+    
+    # Upper bound: sum of all processing times (trivial schedule)
+    upper_bound = sum(p.values())
+    
+    # Big-M for disjunctive constraints
+    big_M = upper_bound  # Conservative but valid
+    
+    # Tighter Big-M: upper_bound - min_processing_time
+    if p:
+        min_processing = min(p.values())
+        tighter_big_M = upper_bound - min_processing
+    else:
+        tighter_big_M = upper_bound
+    
+    return {
+        'lower_bound': lower_bound,
+        'upper_bound': upper_bound,
+        'big_M': big_M,
+        'tighter_big_M': tighter_big_M,
+        'max_job_length': max_job_length,
+        'max_machine_load': max_machine_load
+    }
+
 #Function to build MIP model using PuLP
 def build_mip_model(n_jobs, n_machines, jobs, p):
     prob = LpProblem("JSP_MIP", LpMinimize)
 
-    # Start times
+    # Compute bounds
+    bounds = compute_time_bounds(n_jobs, n_machines, jobs, p)
+    M = bounds['tighter_big_M']  # Use tighter bound
+
+    # Start times with upper bound 
+    horizon = bounds['upper_bound']
     S = {
-        (j, m): LpVariable(f"S_{j}_{m}", lowBound=0)
+        (j, m): LpVariable(f"S_{j}_{m}", lowBound=0, upBound=horizon)
         for j in range(n_jobs)
         for m, _ in jobs[j]
     }
-
-    M = 10000
 
     # Precompute jobs_on_m and M for all machines
     jobs_on_machine = {}  # jobs per machine
@@ -164,7 +202,7 @@ def build_mip_model(n_jobs, n_machines, jobs, p):
                     x[(i, j, m)] = LpVariable(f"x_{i}_{j}_{m}", cat=LpBinary)
 
     # Makespan
-    C_max = LpVariable("C_max", lowBound=0)
+    C_max = LpVariable("C_max", lowBound=bounds['lower_bound'],upBound=horizon)
     prob += C_max
 
     # Job precedence constraints
@@ -187,7 +225,7 @@ def build_mip_model(n_jobs, n_machines, jobs, p):
         m_last, d_last = jobs[j][-1]
         prob += C_max >= S[(j, m_last)] + d_last
 
-    return prob, C_max, S, x
+    return prob, C_max, S, x, bounds
 
 
 #Function to build CP-SAT model using OR-Tools
@@ -208,7 +246,6 @@ def build_cp_model(n_jobs, n_machines, jobs, p):
             start = model.NewIntVar(0, horizon, f"start{suffix}")
             end = model.NewIntVar(0, horizon, f"end{suffix}")
             interval = model.NewIntervalVar(start, duration, end, f"interval{suffix}")
-            
             all_tasks[(j, m)] = (start, end, interval)
             starts[(j, m)] = start
             ends[(j, m)] = end
@@ -252,13 +289,14 @@ def solve_mip_instance(file_path, time_limit=300, gap=0.1, verbose=True, quiet=F
         print(f" [MIP]Reading instance and building model...", flush=True)
     
     n_jobs, n_machines, jobs, p = read_jsplib_instance(file_path)
-    prob, C_max, S, x = build_mip_model(n_jobs, n_machines, jobs, p)
+    prob, C_max, S, x, bounds = build_mip_model(n_jobs, n_machines, jobs, p)
 
     if not quiet:
         # Count constraints and variables for progress info
         n_vars = len(prob.variables())
         n_constraints = len(prob.constraints)
         print(f"  [MIP] Model: {n_vars} variables, {n_constraints} constraints", flush=True)
+        print(f"  [MIP] Time bounds: LB={bounds['lower_bound']}, UB={bounds['upper_bound']}, Big-M={bounds['big_M']}")
         print(f"  [MIP] Solving with CBC (time limit: {time_limit}s, gap: {gap*100:.1f}%)...", flush=True)
 
     solver = PULP_CBC_CMD(msg=verbose, timeLimit=time_limit, gapRel=gap)
