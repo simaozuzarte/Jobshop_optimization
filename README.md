@@ -307,6 +307,6 @@ Check `JSPLIB/instances.json` for known optimum values and bounds.
 
 ## 👤 Authors
 
-Daniel Dória Pinto - up202108808@up.pt  
-Leonor Filipe Fragoso e Santos - up@up.pt  
+Daniel Dória Pinto - up202108808@up.pt
+Leonor Filipe - up202204354@up.pt  
 Simão Zuzarte Bernardo - up202502529@up.pt
