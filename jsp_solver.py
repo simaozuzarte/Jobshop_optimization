@@ -539,10 +539,14 @@ def extract_schedule_from_cp(solver, starts, jobs):
     return schedule
 
 
-def plot_gantt_chart(schedule, n_machines, makespan, instance_name, solver_name):
+def plot_gantt_chart(schedule, n_machines, makespan, instance_name, solver_name, output_dir="output"):
     """Generate and save Gantt chart visualization."""
     if not schedule:
         return
+    
+    # Create output directory structure: output/{instance_name}/
+    instance_output_dir = os.path.join(output_dir, instance_name)
+    os.makedirs(instance_output_dir, exist_ok=True)
     
     fig, ax = plt.subplots(figsize=(12, 6))
     
@@ -595,10 +599,11 @@ def plot_gantt_chart(schedule, n_machines, makespan, instance_name, solver_name)
     # Adjust layout and save
     plt.tight_layout()
     filename = f"gantt_{instance_name}_{solver_name}.png"
-    plt.savefig(filename, dpi=150, bbox_inches='tight')
+    filepath = os.path.join(instance_output_dir, filename)
+    plt.savefig(filepath, dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"  ✓ Gantt chart saved to {filename}")
+    print(f"  ✓ Gantt chart saved to {filepath}")
 
 
 def main():
@@ -679,7 +684,8 @@ def main():
                         n_machines,
                         result["makespan"],
                         instance_name,
-                        result["solver"]
+                        result["solver"],
+                        output_dir="output"
                     )
         
         # Export results if requested
