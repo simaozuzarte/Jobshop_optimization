@@ -1,10 +1,9 @@
-# PROJ_SAAD - Job Shop Scheduling Problem Solver
+# SAAD Project - Job Shop Scheduling Problem Solver
 
-A Mixed Integer Programming (MIP) solver for the **Job Shop Scheduling Problem (JSP)** using Python and PuLP. This project minimizes the makespan (total completion time) for scheduling jobs across multiple machines.
+A hybrid solver for the **Job Shop Scheduling Problem (JSP)** using Python, implementing both Mixed Integer Programming (MIP) and Constraint Programming (CP) approaches. This project minimizes the makespan (total completion time) for scheduling jobs across multiple machines.
 
-<br>
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Problem Description](#problem-description)
@@ -15,17 +14,20 @@ A Mixed Integer Programming (MIP) solver for the **Job Shop Scheduling Problem (
 - [Mathematical Model](#mathematical-model)
 - [Benchmark Instances](#benchmark-instances)
 - [TODOs](#todos)
-- [References](#references)
+- [Authors](#authors)
 
-<br>
 
-## 🎯 Overview
+## Overview
 
-This project implements a **MIP-based solver** for the classic Job Shop Scheduling Problem using the [PuLP](https://coin-or.github.io/pulp/) library with the CBC solver. It reads benchmark instances from the JSPLIB library and finds optimal or near-optimal schedules.
+This project implements **dual solvers** for the classic Job Shop Scheduling Problem:
 
-<br>
+1. **MIP Solver**: Uses the [PuLP](https://coin-or.github.io/pulp/) library with the CBC (COIN-OR) solver
+2. **CP-SAT Solver**: Uses Google's [OR-Tools](https://developers.google.com/optimization) CP-SAT solver
 
-## 📝 Problem Description
+The solvers read benchmark instances from the JSPLIB library and find optimal or near-optimal schedules. Results from both approaches can be compared to identify strengths/weaknesses of each method.
+
+
+## Problem Description
 
 The **Job Shop Scheduling Problem (JSP)** is a combinatorial optimization problem where:
 
@@ -35,14 +37,13 @@ The **Job Shop Scheduling Problem (JSP)** is a combinatorial optimization proble
 - Each machine can process only one operation at a time
 - The goal is to **minimize the makespan** (the time when all jobs are completed)
 
-<br>
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 PROJ_SAAD/
 ├── README.md                 # This file
-├── jsp_solver.py             # Main MIP solver (currently test.py)
+├── jsp_solver.py             # Main dual solver (MIP + CP-SAT)
 └── JSPLIB/                   # Benchmark instance library
     ├── instances.json        # Metadata for all instances (optimum values, bounds)
     ├── README.md             # JSPLIB documentation
@@ -56,11 +57,10 @@ PROJ_SAAD/
     │   └── yn1-4             # Yamada-Nakano instances
     └── script/               # Helper scripts for loading instances
 ```
-<br>
 
-## ⚙️ Installation
+## Installation
 
-### Prerequisites
+### Pre-requisites
 
 - **Python 3.12 or lower** (Required for OR-Tools compatibility. OR-Tools does not support Python 3.13+)
 - pip package manager
@@ -68,13 +68,18 @@ PROJ_SAAD/
 ### Install Dependencies
 
 ```bash
-pip install pulp
-pip install ortools
+pip install pulp matplotlib tabulate numpy
+pip install --no-cache-dir "ortools==9.8.3296"
 ```
 
-<br>
+This installs:
+- **PuLP**: MIP modeling and optimization interface
+- **OR-Tools**: CP-SAT solver and utilities
+- **Matplotlib & NumPy**: Gantt chart visualization
+- **Tabulate**: Pretty-printed tables
 
-## 🚀 Usage
+
+## Usage
 
 ### Quick Start
 
@@ -83,7 +88,7 @@ The solver uses **command-line arguments** to specify which instances to solve a
 ### Basic Commands
 
 ```bash
-# Solve a single instance
+# Solve a single instance with both solvers
 python jsp_solver.py -i JSPLIB/instances/abz5
 
 # Solve multiple specific instances
@@ -91,6 +96,12 @@ python jsp_solver.py -i JSPLIB/instances/abz5 JSPLIB/instances/ft06 JSPLIB/insta
 
 # Solve all instances matching a pattern (use quotes)
 python jsp_solver.py -p "JSPLIB/instances/la*"
+
+# Solve with only MIP solver
+python jsp_solver.py -p "JSPLIB/instances/ft*" --solver mip
+
+# Solve with only CP-SAT solver
+python jsp_solver.py -p "JSPLIB/instances/ft*" --solver cp
 
 # Solve ALL instances (warning: 130+ files, takes hours!)
 python jsp_solver.py -p "JSPLIB/instances/*"
@@ -111,8 +122,20 @@ python jsp_solver.py -i JSPLIB/instances/abz5 --verbose
 # Minimal output mode (only final results)
 python jsp_solver.py -i JSPLIB/instances/abz5 --quiet
 
+# Generate comparison table when using both solvers
+python jsp_solver.py -p "JSPLIB/instances/ft*" --compare
+
+# Generate Gantt charts for solutions
+python jsp_solver.py -i JSPLIB/instances/abz5 --gantt
+
+# Export results to CSV
+python jsp_solver.py -p "JSPLIB/instances/la*" --export-csv results.csv
+
+# Export results to JSON
+python jsp_solver.py -p "JSPLIB/instances/la*" --export-json results.json
+
 # Combine multiple options
-python jsp_solver.py -p "JSPLIB/instances/ft*" -t 120 -g 0.05 --verbose
+python jsp_solver.py -p "JSPLIB/instances/ft*" -t 120 -g 0.05 --solver both --compare --gantt
 ```
 
 ### Command-Line Arguments
@@ -121,9 +144,14 @@ python jsp_solver.py -p "JSPLIB/instances/ft*" -t 120 -g 0.05 --verbose
 |----------|-------|-------------|---------|
 | `--instances` | `-i` | List of instance file paths | Required* |
 | `--pattern` | `-p` | Glob pattern to match files (e.g., `"la*"`) | Required* |
+| `--solver` | `-s` | Solver to use: `mip`, `cp`, or `both` | `both` |
 | `--time-limit` | `-t` | Max seconds per instance | 300 |
 | `--gap` | `-g` | MIP gap tolerance (0.1 = 10%) | 0.1 |
-| `--verbose` | `-v` | Show CBC solver output | False |
+| `--compare` | `-c` | Generate comparison table (requires `--solver both`) | False |
+| `--gantt` | - | Generate Gantt chart visualizations | False |
+| `--export-csv` | - | Export results to CSV file | - |
+| `--export-json` | - | Export results to JSON file | - |
+| `--verbose` | `-v` | Show detailed solver output | False |
 | `--quiet` | `-q` | Suppress progress messages | False |
 | `--help` | `-h` | Display help message | - |
 
@@ -132,62 +160,94 @@ python jsp_solver.py -p "JSPLIB/instances/ft*" -t 120 -g 0.05 --verbose
 ### How It Works
 
 1. **Reading**: The solver reads JSPLIB instance files and parses job/machine data
-2. **Model Building**: Constructs a Mixed Integer Programming model with:
+2. **Model Building**: Constructs a model (MIP or CP-SAT) with:
    - Decision variables for start times and job sequencing
    - Constraints for job precedence and machine capacity
    - Objective to minimize makespan
-3. **Solving**: Calls the CBC solver with specified time/gap limits
-4. **Reporting**: Outputs status, makespan, and runtime
+3. **Solving**: Calls the selected solver (CBC for MIP, OR-Tools CP-SAT for CP) with specified time/gap limits
+4. **Reporting**: Outputs status, makespan, runtime, and optional visualizations/exports
 
 ### Output Format
 
-#### Standard Mode (default)
-Shows progress for each instance with real-time updates:
+#### Default Mode (both solvers)
+Shows progress for each instance with individual solver outputs:
 
 ```
 Solving 2 instance(s)...
-Settings: time_limit=300s, gap=10.0%
-------------------------------------------------------------
+Settings: solver=both, time_limit=300s, gap=10.0%
+--------------------------------------------------------------------------------
 
 [1/2] Solving: JSPLIB/instances/abz5
-  → Reading instance and building model...
-  → Model: 150 variables, 300 constraints
-  → Solving with CBC (time limit: 300s, gap: 10.0%)...
-  ✓ Finished in 45.23s
-  Result: {'instance': 'JSPLIB/instances/abz5', 'status': 'Optimal', 'makespan': 1234.0, 'time': 45.23}
+  [MIP] Reading instance and building model...
+  [MIP] Model: 150 variables, 300 constraints
+  [MIP] Solving with CBC (time limit: 300s, gap: 10.0%)...
+[MIP] Status: Optimal | Makespan: 1234 | Time: 45.23s
+  [CP] Reading instance and building model...
+  [CP] Solving with OR-Tools CP-SAT (time limit: 300s)...
+  ✓ [CP] Finished in 23.45s - Makespan: 1234 - Status: Optimal
 
 [2/2] Solving: JSPLIB/instances/ft06
-  → Reading instance and building model...
-  → Model: 42 variables, 84 constraints
-  → Solving with CBC (time limit: 300s, gap: 10.0%)...
-  ✓ Finished in 2.15s
-  Result: {'instance': 'JSPLIB/instances/ft06', 'status': 'Optimal', 'makespan': 55.0, 'time': 2.15}
+  [MIP] Reading instance and building model...
+  [MIP] Model: 42 variables, 84 constraints
+  [MIP] Solving with CBC (time limit: 300s, gap: 10.0%)...
+[MIP] Status: Optimal | Makespan: 55 | Time: 2.15s
+  [CP] Reading instance and building model...
+  [CP] Solving with OR-Tools CP-SAT (time limit: 300s)...
+  ✓ [CP] Finished in 1.82s - Makespan: 55 - Status: Optimal
 
-============================================================
-SUMMARY
-============================================================
-Solved: 2/2
-Total time: 47.38s
+================================================================================
+SOLVER SUMMARY
+================================================================================
+MIP Solver: 2/2 solved, 2 optimal
+CP Solver:  2/2 solved, 2 optimal
+Total time: 73.65s
 ```
+
+#### With Comparison Table (`--compare`)
+Displays a detailed comparison between MIP and CP-SAT solvers:
+
+```
+| Instance | MIP Status | MIP Makespan | MIP Time (s) | CP Status | CP Makespan | CP Time (s) | Makespan Diff % | Better Solver |
+|----------|-----------|--------------|-------------|----------|------------|------------|-----------------|---------------|
+| abz5     | Optimal    | 1234         | 45.23       | Optimal  | 1234       | 23.45      | 0.00            | Equal         |
+| ft06     | Optimal    | 55           | 2.15        | Optimal  | 55         | 1.82       | 0.00            | Equal         |
+```
+
+#### MIP-Only Mode (`--solver mip`)
+Shows only MIP solver progress and results.
+
+#### CP-Only Mode (`--solver cp`)
+Shows only CP-SAT solver progress and results.
 
 #### Quiet Mode (`--quiet`)
-Only prints final results (one per line):
-
-```
-{'instance': 'JSPLIB/instances/abz5', 'status': 'Optimal', 'makespan': 1234.0, 'time': 45.23}
-{'instance': 'JSPLIB/instances/ft06', 'status': 'Optimal', 'makespan': 55.0, 'time': 2.15}
-```
+Suppresses all progress output, showing only the final summary.
 
 #### Verbose Mode (`--verbose`)
-Shows CBC solver log with search tree progress, cuts, and branching decisions.
+Shows detailed solver logs including search tree progress, cuts, and branching decisions.
 
 ### Result Fields
 
-Each result dictionary contains:
+Each result record contains:
 - **`instance`**: Path to the instance file
-- **`status`**: Solver status (Optimal, Feasible, Infeasible, Not Solved, Undefined)
+- **`solver`**: Solver used (`MIP` or `CP`)
+- **`status`**: Solver status (Optimal, Feasible, Infeasible, Unknown)
 - **`makespan`**: Objective value (total completion time), or `None` if unsolved
 - **`time`**: Wall-clock time in seconds
+- **`optimal`**: Boolean indicating if solution is proven optimal
+- **`schedule`**: List of operations with start times and durations (if solved)
+
+### Output Files
+
+When using export options:
+
+#### CSV Export (`--export-csv results.csv`)
+Exports results in tabular format with columns: instance, solver, status, makespan, time, optimal
+
+#### JSON Export (`--export-json results.json`)
+Exports full results including complete schedule details in JSON format
+
+#### Gantt Charts (`--gantt`)
+Generates PNG visualizations of the schedule for each solved instance, saved to `output/` directory
 
 ### Interrupting Execution
 
@@ -203,9 +263,8 @@ Completed 3/10 instance(s) in 145.67s
 Solved before interruption: 2/3
 ```
 
-<br>
 
-## 📄 Instance Format
+## Instance Format
 
 Instance files follow the JSPLIB standard format:
 
@@ -224,9 +283,8 @@ Instance files follow the JSPLIB standard format:
 1 4 2 3 0 1    # Job 2: M1(4) → M2(3) → M0(1)
 ```
 
-<br>
 
-## 🔢 Mathematical Model
+## Mathematical Model
 
 ### Decision Variables
 
@@ -250,9 +308,8 @@ $$\min C_{max}$$
 3. **Makespan Definition**: 
    $$C_{max} \geq S_{j,m_{last}} + p_{j,m_{last}} \quad \forall j$$
 
-<br>
 
-## 📊 Benchmark Instances
+## Benchmark Instances
 
 The JSPLIB library includes **130+ benchmark instances** from the literature:
 
@@ -268,7 +325,6 @@ The JSPLIB library includes **130+ benchmark instances** from the literature:
 
 Check `JSPLIB/instances.json` for known optimum values and bounds.
 
-<br>
 
 ## ✅ TODOs
 
@@ -294,20 +350,9 @@ Check `JSPLIB/instances.json` for known optimum values and bounds.
 - [ ] **Add progress callback** - Report intermediate solutions during solving
 - [ ] **Parallelize solving** - Solve multiple instances concurrently
 
-<br>
 
-## 📚 References
+## Authors
 
-1. Adams, J., Balas, E., Zawack, D. (1988). "The shifting bottleneck procedure for job shop scheduling." *Management Science*, 34(3), 391-401.
-2. Muth, J.F., Thompson, G.L. (1963). *Industrial Scheduling*. Prentice-Hall.
-3. Lawrence, S. (1984). "Resource constrained project scheduling." Carnegie-Mellon University.
-4. Applegate, D., Cook, W. (1991). "A computational study of job-shop scheduling." *ORSA Journal on Computing*, 3(2), 149-156.
-5. Taillard, E. (1993). "Benchmarks for basic scheduling problems." *European Journal of Operational Research*, 64(2), 278-285.
-
-<br>
-
-## 👤 Authors
-
-Daniel Dória Pinto - up202108808@up.pt
-Leonor Filipe - up202204354@up.pt  
-Simão Zuzarte Bernardo - up202502529@up.pt
+- Daniel Dória Pinto - up202108808@up.pt
+- Leonor Filipe - up202204354@up.pt  
+- Simão Zuzarte Bernardo - up202502529@up.pt
