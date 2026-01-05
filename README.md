@@ -204,13 +204,13 @@ Total time: 73.65s
 ```
 
 #### With Comparison Table (`--compare`)
-Displays a detailed comparison between MIP and CP-SAT solvers:
+Displays a detailed comparison between MIP and CP-SAT solvers with optimality gaps:
 
 ```
-| Instance | MIP Status | MIP Makespan | MIP Time (s) | CP Status | CP Makespan | CP Time (s) | Makespan Diff % | Better Solver |
-|----------|-----------|--------------|-------------|----------|------------|------------|-----------------|---------------|
-| abz5     | Optimal    | 1234         | 45.23       | Optimal  | 1234       | 23.45      | 0.00            | Equal         |
-| ft06     | Optimal    | 55           | 2.15        | Optimal  | 55         | 1.82       | 0.00            | Equal         |
+| Instance | MIP Status | MIP Makespan | MIP Gap % | MIP Time (s) | CP Status | CP Makespan | CP Gap % | CP Time (s) | Makespan Diff % | Better Solver |
+|----------|-----------|--------------|-----------|-------------|----------|------------|---------|------------|-----------------|---------------|
+| abz5     | Optimal    | 1234         | 0.00      | 45.23       | Optimal  | 1234       | 0.00    | 23.45      | 0.00            | Equal         |
+| ft06     | Optimal    | 55           | 0.00      | 2.15        | Optimal  | 55         | 0.00    | 1.82       | 0.00            | Equal         |
 ```
 
 #### MIP-Only Mode (`--solver mip`)
@@ -234,14 +234,18 @@ Each result record contains:
 - **`makespan`**: Objective value (total completion time), or `None` if unsolved
 - **`time`**: Wall-clock time in seconds
 - **`optimal`**: Boolean indicating if solution is proven optimal
+- **`optimum`**: Known optimum value from instances.json (if available)
+- **`optimality_gap`**: Gap from optimum: `(found - optimum) / optimum × 100%` (if optimum is known)
 - **`schedule`**: List of operations with start times and durations (if solved)
+- **`schedule_valid`**: Boolean indicating if schedule passed validation
+- **`validation_violations`**: List of constraint violations (if validation failed)
 
 ### Output Files
 
 When using export options:
 
 #### CSV Export (`--export-csv results.csv`)
-Exports results in tabular format with columns: instance, solver, status, makespan, time, optimal
+Exports results in tabular format with columns: instance, solver, status, makespan, optimum, optimality_gap, time, optimal, schedule_valid
 
 #### JSON Export (`--export-json results.json`)
 Exports full results including complete schedule details in JSON format
@@ -330,16 +334,16 @@ Check `JSPLIB/instances.json` for known optimum values and bounds.
 
 - [x] **Rename `test.py` → `jsp_solver.py`** - More descriptive name
 - [x] **Add command-line argument parsing** - Use `argparse` to specify instances, time limits, etc.
-- [ ] **Improve Big-M calculation** - Currently hardcoded as 10000; should be computed dynamically
-- [ ] **Add solution validation** - Verify that the solution respects all constraints
+- [x] **Improve Big-M calculation** - Currently hardcoded as 10000; should be computed dynamically
+- [x] **Add solution validation** - Verify that the solution respects all constraints
 - [x] **Export schedule visualization** - Generate Gantt charts for the solution
 
 ### Medium Priority
-- [ ] **Add logging module** - Replace `print()` with proper logging
-- [ ] **Load optimum values from `instances.json`** - Compare solver results with known optima
-- [ ] **Calculate optimality gap** - Report `(found - optimum) / optimum × 100%`
+- [x] **Add logging module** - Replace `print()` with proper logging
+- [x] **Load optimum values from `instances.json`** - Compare solver results with known optima
+- [x] **Calculate optimality gap** - Report `(found - optimum) / optimum × 100%`
 - [x] **Save results to CSV/JSON** - Export batch results for analysis
-- [ ] **Add solution extraction** - Output the actual schedule (start times per operation)
+- [x] **Add solution extraction** - Output the actual schedule (start times per operation)
 
 ### Low Priority / Enhancements
 - [ ] **Implement warm-start** - Use heuristic solutions (e.g., SPT, LPT) as initial solution

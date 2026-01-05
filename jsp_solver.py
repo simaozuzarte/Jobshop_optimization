@@ -5,6 +5,7 @@ import glob
 import sys
 import json
 import csv
+import logging
 from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -18,6 +19,26 @@ from ortools.sat.python import cp_model
 
 #For pretty table output
 from tabulate import tabulate
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Create a custom logger that respects quiet mode
+class QuietFilter(logging.Filter):
+    def __init__(self, quiet=False):
+        self.quiet = quiet
+    
+    def filter(self, record):
+        return not self.quiet
+
+quiet_filter = QuietFilter()
 
 def parse_arguments():
     """Parse command-line arguments."""
@@ -137,6 +158,127 @@ def read_jsplib_instance(file_path):
         jobs.append(job_pairs)
 
     return n_jobs, n_machines, jobs, p
+
+def load_optimum_values(jsplib_dir="JSPLIB"):
+    """Load optimum values and bounds from instances.json."""
+    optimum_data = {}
+    instances_json_path = os.path.join(jsplib_dir, "instances.json")
+    
+    if not os.path.exists(instances_json_path):
+        logger.warning(f"instances.json not found at {instances_json_path}")
+        return optimum_data
+    
+    try:
+        with open(instances_json_path, 'r') as f:
+            data = json.load(f)
+        
+        for instance_info in data:
+            name = instance_info.get('name')
+            optimum = instance_info.get('optimum')
+            bounds = instance_info.get('bounds')
+            
+            optimum_data[name] = {
+                'optimum': optimum,
+                'bounds': bounds
+            }
+        
+        logger.debug(f"Loaded optimum values for {len(optimum_data)} instances")
+        return optimum_data
+    except Exception as e:
+        logger.error(f"Error loading instances.json: {e}")
+        return optimum_data
+
+def get_instance_optimum(file_path, optimum_data):
+    """Get optimum value for an instance by extracting its name from file path."""
+    instance_name = os.path.splitext(os.path.basename(file_path))[0]
+    return optimum_data.get(instance_name, {})
+
+def validate_schedule(schedule, n_jobs, n_machines, jobs, p):
+    """Validate that a schedule respects all constraints.
+    
+    Returns:
+        tuple: (is_valid, violations_list)
+    """
+    violations = []
+    
+    if not schedule:
+        return True, []
+    
+    # Create a dictionary for quick lookup: (job, machine) -> (start, duration, end)
+    schedule_dict = {}
+    for op in schedule:
+        j, m = op['job'], op['machine']
+        schedule_dict[(j, m)] = {
+            'start': op['start'],
+            'duration': op['duration'],
+            'end': op['start'] + op['duration']
+        }
+    
+    # Check 1: All operations are present
+    all_ops = set()
+    for j in range(n_jobs):
+        for m, _ in jobs[j]:
+            all_ops.add((j, m))
+    
+    schedule_ops = set((op['job'], op['machine']) for op in schedule)
+    missing_ops = all_ops - schedule_ops
+    if missing_ops:
+        violations.append(f"Missing operations: {missing_ops}")
+    
+    extra_ops = schedule_ops - all_ops
+    if extra_ops:
+        violations.append(f"Extra/invalid operations: {extra_ops}")
+    
+    # Check 2: Job precedence constraints
+    for j in range(n_jobs):
+        for k in range(len(jobs[j]) - 1):
+            m1, d1 = jobs[j][k]
+            m2, _ = jobs[j][k + 1]
+            
+            if (j, m1) in schedule_dict and (j, m2) in schedule_dict:
+                end1 = schedule_dict[(j, m1)]['end']
+                start2 = schedule_dict[(j, m2)]['start']
+                
+                if start2 < end1:
+                    violations.append(
+                        f"Job precedence violated: Job {j}, "
+                        f"Operation on M{m1} ends at {end1}, "
+                        f"but operation on M{m2} starts at {start2}"
+                    )
+    
+    # Check 3: Machine capacity constraints (no overlapping operations)
+    for m in range(n_machines):
+        # Get all operations on this machine
+        machine_ops = [(op['job'], op['start'], op['start'] + op['duration']) 
+                       for op in schedule if op['machine'] == m]
+        
+        # Sort by start time
+        machine_ops.sort(key=lambda x: x[1])
+        
+        # Check for overlaps
+        for i in range(len(machine_ops)):
+            for j in range(i + 1, len(machine_ops)):
+                job_i, start_i, end_i = machine_ops[i]
+                job_j, start_j, end_j = machine_ops[j]
+                
+                # Check if intervals overlap (accounting for floating point)
+                eps = 1e-6
+                if start_i + eps < end_j and start_j + eps < end_i:
+                    violations.append(
+                        f"Machine capacity violated: Machine {m}, "
+                        f"Job {job_i}[{start_i:.2f}, {end_i:.2f}] overlaps with "
+                        f"Job {job_j}[{start_j:.2f}, {end_j:.2f}]"
+                    )
+    
+    # Check 4: Start times and durations are non-negative
+    for op in schedule:
+        if op['start'] < -1e-6:
+            violations.append(f"Negative start time: {op['start']} for Job {op['job']} on M{op['machine']}")
+        if op['duration'] < 0:
+            violations.append(f"Negative duration: {op['duration']} for Job {op['job']} on M{op['machine']}")
+    
+    is_valid = len(violations) == 0
+    return is_valid, violations
 
 def compute_time_bounds(n_jobs, n_machines, jobs, p):
     """Compute time bounds for the instance."""
@@ -283,117 +425,178 @@ def build_cp_model(n_jobs, n_machines, jobs, p):
 
 
 # Function to solve a single instance
-def solve_mip_instance(file_path, time_limit=300, gap=0.1, verbose=True, quiet=False):
+def solve_mip_instance(file_path, time_limit=300, gap=0.1, verbose=True, quiet=False, optimum_data=None):
     """Solve a single JSP instance and return results."""
-    if not quiet:
-        print(f" [MIP] Reading instance and building model...", flush=True)
+    if optimum_data is None:
+        optimum_data = {}
     
-    n_jobs, n_machines, jobs, p = read_jsplib_instance(file_path)
-    prob, C_max, S, x, bounds = build_mip_model(n_jobs, n_machines, jobs, p)
+    quiet_filter.quiet = quiet
+    logger.addFilter(quiet_filter)
+    
+    try:
+        logger.info(f"[MIP] Reading instance and building model from {file_path}")
+        
+        n_jobs, n_machines, jobs, p = read_jsplib_instance(file_path)
+        prob, C_max, S, x, bounds = build_mip_model(n_jobs, n_machines, jobs, p)
 
-    if not quiet:
         # Count constraints and variables for progress info
         n_vars = len(prob.variables())
         n_constraints = len(prob.constraints)
-        print(f"  [MIP] Model: {n_vars} variables, {n_constraints} constraints", flush=True)
-        print(f"  [MIP] Time bounds: LB={bounds['lower_bound']}, UB={bounds['upper_bound']}, Big-M={bounds['big_M']}")
-        print(f"  [MIP] Solving with CBC (time limit: {time_limit}s, gap: {gap*100:.1f}%)...", flush=True)
+        logger.info(f"[MIP] Model: {n_vars} variables, {n_constraints} constraints")
+        logger.debug(f"[MIP] Time bounds: LB={bounds['lower_bound']}, UB={bounds['upper_bound']}, Big-M={bounds['big_M']}")
+        logger.info(f"[MIP] Solving with CBC (time limit: {time_limit}s, gap: {gap*100:.1f}%)...")
 
-    solver = PULP_CBC_CMD(msg=verbose, timeLimit=time_limit, gapRel=gap)
+        solver = PULP_CBC_CMD(msg=verbose, timeLimit=time_limit, gapRel=gap)
 
-    start = time.time()
-    prob.solve(solver)
-    runtime = time.time() - start
+        start = time.time()
+        prob.solve(solver)
+        runtime = time.time() - start
 
-    status = LpStatus[prob.status]
-    makespan = C_max.varValue if status in ["Optimal", "Feasible"] else None
+        status = LpStatus[prob.status]
+        makespan = C_max.varValue if status in ["Optimal", "Feasible"] else None
 
-    # Extract schedule if solution found
-    schedule = []
-    for (j, m), var in S.items():
-        if var.varValue is not None:
-            duration = p[(j, m)]  # Get duration from p dictionary
-            schedule.append({
-                'job': j,
-                'machine': m,
-                'start': var.varValue,
-                'duration': duration
-            })
-
-    if not quiet:
-        print(f"[MIP] Status: {status} | Makespan: {makespan} | Time: {runtime:.2f}s")
-
-    return {
-        "instance": file_path,
-        "solver": "MIP",
-        "status": status,
-        "makespan": makespan,
-        "time": runtime,
-        "optimal": status == "Optimal",
-        "schedule": schedule
-    }
-
-def solve_cp_instance(file_path, time_limit=300, verbose=True, quiet=False):
-    """Solve a single JSP instance using CP-SAT and return results."""
-    if not quiet:
-        print(f"  [CP] Reading instance and building model...", flush=True)
-    
-    n_jobs, n_machines, jobs, p = read_jsplib_instance(file_path)
-    model, makespan_var, starts, ends = build_cp_model(n_jobs, n_machines, jobs, p)
-    
-    if not quiet:
-        print(f"  [CP] Solving with OR-Tools CP-SAT (time limit: {time_limit}s)...", flush=True)
-    
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = time_limit
-    solver.parameters.num_search_workers = 8  # Use multiple cores
-    
-    if verbose:
-        solver.parameters.log_search_progress = True
-    
-    start = time.time()
-    status = solver.Solve(model)
-    runtime = time.time() - start
-    
-    # Map OR-Tools status to readable format
-    status_map = {
-        cp_model.OPTIMAL: "Optimal",
-        cp_model.FEASIBLE: "Feasible",
-        cp_model.INFEASIBLE: "Infeasible",
-        cp_model.MODEL_INVALID: "Model Invalid",
-        cp_model.UNKNOWN: "Unknown"
-    }
-    status_str = status_map.get(status, "Unknown")
-    
-    makespan = solver.Value(makespan_var) if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else None
-    
-    # Extract schedule if solution found
-    schedule = None
-    if makespan is not None:
+        # Extract schedule if solution found
         schedule = []
-        for (j, m), start_var in starts.items():
-            start_time = solver.Value(start_var)
-            duration = p[(j, m)]  # Get duration from p dictionary
-            schedule.append({
-                'job': j,
-                'machine': m,
-                'start': start_time,
-                'duration': duration
-            })
+        for (j, m), var in S.items():
+            if var.varValue is not None:
+                duration = p[(j, m)]  # Get duration from p dictionary
+                schedule.append({
+                    'job': j,
+                    'machine': m,
+                    'start': var.varValue,
+                    'duration': duration
+                })
+
+        # Validate schedule
+        is_valid = True
+        validation_info = None
+        if schedule:
+            is_valid, violations = validate_schedule(schedule, n_jobs, n_machines, jobs, p)
+            if not is_valid:
+                logger.warning(f"[MIP] Schedule validation failed with {len(violations)} violations")
+                validation_info = violations
+            else:
+                logger.debug("[MIP] Schedule validation passed")
+        
+        # Calculate optimality gap
+        instance_info = get_instance_optimum(file_path, optimum_data)
+        optimum = instance_info.get('optimum')
+        optimality_gap = None
+        
+        if optimum is not None and makespan is not None:
+            optimality_gap = ((makespan - optimum) / optimum) * 100
+            logger.info(f"[MIP] Status: {status} | Makespan: {makespan} | Optimum: {optimum} | Gap: {optimality_gap:.2f}% | Time: {runtime:.2f}s")
+        else:
+            logger.info(f"[MIP] Status: {status} | Makespan: {makespan} | Time: {runtime:.2f}s")
+
+        return {
+            "instance": file_path,
+            "solver": "MIP",
+            "status": status,
+            "makespan": makespan,
+            "time": runtime,
+            "optimal": status == "Optimal",
+            "schedule": schedule,
+            "optimum": optimum,
+            "optimality_gap": optimality_gap,
+            "schedule_valid": is_valid,
+            "validation_violations": validation_info
+        }
+    finally:
+        logger.removeFilter(quiet_filter)
+
+def solve_cp_instance(file_path, time_limit=300, verbose=True, quiet=False, optimum_data=None):
+    """Solve a single JSP instance using CP-SAT and return results."""
+    if optimum_data is None:
+        optimum_data = {}
     
-    if not quiet:
-        status_symbol = "✓" if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else "✗"
-        print(f"  {status_symbol} [CP] Finished in {runtime:.2f}s - Makespan: {makespan if makespan else 'N/A'} - Status: {status_str}", flush=True)
+    quiet_filter.quiet = quiet
+    logger.addFilter(quiet_filter)
     
-    return {
-        "instance": file_path,
-        "solver": "CP",
-        "status": status_str,
-        "makespan": makespan,
-        "time": runtime,
-        "optimal": status == cp_model.OPTIMAL,
-        "schedule": schedule
-    }
+    try:
+        logger.info(f"[CP] Reading instance and building model from {file_path}")
+        
+        n_jobs, n_machines, jobs, p = read_jsplib_instance(file_path)
+        model, makespan_var, starts, ends = build_cp_model(n_jobs, n_machines, jobs, p)
+        
+        logger.info(f"[CP] Solving with OR-Tools CP-SAT (time limit: {time_limit}s)...")
+        
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = time_limit
+        solver.parameters.num_search_workers = 8  # Use multiple cores
+        
+        if verbose:
+            solver.parameters.log_search_progress = True
+        
+        start = time.time()
+        status = solver.Solve(model)
+        runtime = time.time() - start
+        
+        # Map OR-Tools status to readable format
+        status_map = {
+            cp_model.OPTIMAL: "Optimal",
+            cp_model.FEASIBLE: "Feasible",
+            cp_model.INFEASIBLE: "Infeasible",
+            cp_model.MODEL_INVALID: "Model Invalid",
+            cp_model.UNKNOWN: "Unknown"
+        }
+        status_str = status_map.get(status, "Unknown")
+        
+        makespan = solver.Value(makespan_var) if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else None
+        
+        # Extract schedule if solution found
+        schedule = None
+        if makespan is not None:
+            schedule = []
+            for (j, m), start_var in starts.items():
+                start_time = solver.Value(start_var)
+                duration = p[(j, m)]  # Get duration from p dictionary
+                schedule.append({
+                    'job': j,
+                    'machine': m,
+                    'start': start_time,
+                    'duration': duration
+                })
+        
+        # Validate schedule
+        is_valid = True
+        validation_info = None
+        if schedule:
+            is_valid, violations = validate_schedule(schedule, n_jobs, n_machines, jobs, p)
+            if not is_valid:
+                logger.warning(f"[CP] Schedule validation failed with {len(violations)} violations")
+                validation_info = violations
+            else:
+                logger.debug("[CP] Schedule validation passed")
+        
+        # Calculate optimality gap
+        instance_info = get_instance_optimum(file_path, optimum_data)
+        optimum = instance_info.get('optimum')
+        optimality_gap = None
+        
+        if optimum is not None and makespan is not None:
+            optimality_gap = ((makespan - optimum) / optimum) * 100
+            status_symbol = "✓" if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else "✗"
+            logger.info(f"{status_symbol} [CP] Finished in {runtime:.2f}s - Makespan: {makespan} - Optimum: {optimum} - Gap: {optimality_gap:.2f}% - Status: {status_str}")
+        else:
+            status_symbol = "✓" if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else "✗"
+            logger.info(f"{status_symbol} [CP] Finished in {runtime:.2f}s - Makespan: {makespan if makespan else 'N/A'} - Status: {status_str}")
+        
+        return {
+            "instance": file_path,
+            "solver": "CP",
+            "status": status_str,
+            "makespan": makespan,
+            "time": runtime,
+            "optimal": status == cp_model.OPTIMAL,
+            "schedule": schedule,
+            "optimum": optimum,
+            "optimality_gap": optimality_gap,
+            "schedule_valid": is_valid,
+            "validation_violations": validation_info
+        }
+    finally:
+        logger.removeFilter(quiet_filter)
 
 def compare_solvers(results_mip, results_cp):
     """Compare results from MIP and CP solvers."""
@@ -421,9 +624,11 @@ def compare_solvers(results_mip, results_cp):
             "Instance": instance_name,
             "MIP Status": mip_res["status"],
             "MIP Makespan": mip_res["makespan"],
+            "MIP Gap %": f"{mip_res['optimality_gap']:.2f}" if mip_res.get('optimality_gap') is not None else "N/A",
             "MIP Time (s)": f"{mip_res['time']:.2f}",
             "CP Status": cp_res["status"],
             "CP Makespan": cp_res["makespan"],
+            "CP Gap %": f"{cp_res['optimality_gap']:.2f}" if cp_res.get('optimality_gap') is not None else "N/A",
             "CP Time (s)": f"{cp_res['time']:.2f}",
             "Makespan Diff %": f"{makespan_diff:.2f}" if makespan_diff is not None else "N/A",
             "Better Solver": better_solver if better_solver else "N/A"
@@ -435,11 +640,11 @@ def compare_solvers(results_mip, results_cp):
 def print_comparison_table(comparison_data):
     """Print a formatted comparison table."""
     if not comparison_data:
-        print("No comparison data available.")
+        logger.info("No comparison data available.")
         return
     
-    headers = ["Instance", "MIP Status", "MIP Makespan", "MIP Time (s)", 
-               "CP Status", "CP Makespan", "CP Time (s)", "Makespan Diff %", "Better Solver"]
+    headers = ["Instance", "MIP Status", "MIP Makespan", "MIP Gap %", "MIP Time (s)", 
+               "CP Status", "CP Makespan", "CP Gap %", "CP Time (s)", "Makespan Diff %", "Better Solver"]
     
     # Convert to list of lists for tabulate
     table_data = []
@@ -448,18 +653,20 @@ def print_comparison_table(comparison_data):
             row["Instance"],
             row["MIP Status"],
             row["MIP Makespan"] if row["MIP Makespan"] is not None else "N/A",
+            row["MIP Gap %"],
             row["MIP Time (s)"],
             row["CP Status"],
             row["CP Makespan"] if row["CP Makespan"] is not None else "N/A",
+            row["CP Gap %"],
             row["CP Time (s)"],
             row["Makespan Diff %"],
             row["Better Solver"]
         ])
     
-    print("\n" + "=" * 100)
-    print("SOLVER COMPARISON TABLE")
-    print("=" * 100)
-    print(tabulate(table_data, headers=headers, tablefmt="grid"))
+    logger.info("\n" + "=" * 140)
+    logger.info("SOLVER COMPARISON TABLE")
+    logger.info("=" * 140)
+    logger.info("\n" + tabulate(table_data, headers=headers, tablefmt="grid"))
     
     # Summary statistics
     mip_solved = sum(1 for row in comparison_data if row["MIP Makespan"] is not None)
@@ -467,12 +674,12 @@ def print_comparison_table(comparison_data):
     mip_better = sum(1 for row in comparison_data if row["Better Solver"] == "MIP")
     cp_better = sum(1 for row in comparison_data if row["Better Solver"] == "CP")
     
-    print(f"\nSummary:")
-    print(f"  Instances solved by MIP: {mip_solved}/{len(comparison_data)}")
-    print(f"  Instances solved by CP:  {cp_solved}/{len(comparison_data)}")
-    print(f"  MIP better makespan:     {mip_better}")
-    print(f"  CP better makespan:      {cp_better}")
-    print(f"  Equal makespan:          {len(comparison_data) - mip_better - cp_better}")
+    logger.info(f"\nComparison Summary:")
+    logger.info(f"  Instances solved by MIP: {mip_solved}/{len(comparison_data)}")
+    logger.info(f"  Instances solved by CP:  {cp_solved}/{len(comparison_data)}")
+    logger.info(f"  MIP better makespan:     {mip_better}")
+    logger.info(f"  CP better makespan:      {cp_better}")
+    logger.info(f"  Equal makespan:          {len(comparison_data) - mip_better - cp_better}")
 
 
 def export_results(results, output_file, comparison_data=None):
@@ -508,7 +715,7 @@ def export_results_csv(results, filename="results.csv"):
         return
     
     with open(filename, 'w', newline='') as csvfile:
-        fieldnames = ['instance', 'solver', 'status', 'makespan', 'time', 'optimal', 'timestamp']
+        fieldnames = ['instance', 'solver', 'status', 'makespan', 'optimum', 'optimality_gap', 'time', 'optimal', 'schedule_valid', 'timestamp']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         
@@ -518,13 +725,16 @@ def export_results_csv(results, filename="results.csv"):
                 'solver': result.get('solver', ''),
                 'status': result.get('status', ''),
                 'makespan': result.get('makespan', ''),
+                'optimum': result.get('optimum', ''),
+                'optimality_gap': result.get('optimality_gap', ''),
                 'time': result.get('time', ''),
                 'optimal': result.get('optimal', False),
+                'schedule_valid': result.get('schedule_valid', ''),
                 'timestamp': datetime.now().isoformat()
             }
             writer.writerow(row)
     
-    print(f"  ✓ Results exported to {filename}")
+    logger.info(f"  ✓ Results exported to {filename}")
 
 
 def export_results_json(results, filename="results.json"):
@@ -541,7 +751,7 @@ def export_results_json(results, filename="results.json"):
     with open(filename, 'w') as jsonfile:
         json.dump(export_data, jsonfile, indent=2, default=str)
     
-    print(f"  ✓ Results exported to {filename}")
+    logger.info(f"  ✓ Results exported to {filename}")
 
 
 def extract_schedule_from_mip(prob, n_jobs, jobs):
@@ -641,12 +851,21 @@ def plot_gantt_chart(schedule, n_machines, makespan, instance_name, solver_name,
     plt.savefig(filepath, dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"  ✓ Gantt chart saved to {filepath}")
+    logger.info(f"  ✓ Gantt chart saved to {filepath}")
 
 
 def main():
     """Main entry point for the JSP solver."""
     args = parse_arguments()
+    
+    # Configure logging based on quiet flag
+    if args.quiet:
+        logger.setLevel(logging.WARNING)
+    else:
+        logger.setLevel(logging.INFO)
+    
+    # Load optimum values from instances.json
+    optimum_data = load_optimum_values()
     
     # Get list of instances to solve
     if args.instances:
@@ -654,19 +873,18 @@ def main():
     else:
         instances = sorted(glob.glob(args.pattern))
         if not instances:
-            print(f"Error: No files match pattern '{args.pattern}'")
+            logger.error(f"Error: No files match pattern '{args.pattern}'")
             return
     
     # Validate instance files exist
     for inst in instances:
         if not os.path.isfile(inst):
-            print(f"Error: Instance file not found: {inst}")
+            logger.error(f"Error: Instance file not found: {inst}")
             return
     
-    if not args.quiet:
-        print(f"Solving {len(instances)} instance(s)...")
-        print(f"Settings: solver={args.solver}, time_limit={args.time_limit}s, gap={args.gap*100:.1f}%")
-        print("-" * 80)
+    logger.info(f"Solving {len(instances)} instance(s)...")
+    logger.info(f"Settings: solver={args.solver}, time_limit={args.time_limit}s, gap={args.gap*100:.1f}%")
+    logger.info("-" * 80)
     
     all_results = []
     mip_results = []
@@ -676,8 +894,7 @@ def main():
     try:
         # Solve each instance with selected solver(s)
         for idx, inst in enumerate(instances, 1):
-            if not args.quiet:
-                print(f"\n[{idx}/{len(instances)}] Solving: {inst}")
+            logger.info(f"\n[{idx}/{len(instances)}] Solving: {inst}")
             
             # Solve with MIP if requested
             if args.solver in ["mip", "both"]:
@@ -686,7 +903,8 @@ def main():
                     time_limit=args.time_limit,
                     gap=args.gap,
                     verbose=args.verbose,
-                    quiet=args.quiet
+                    quiet=args.quiet,
+                    optimum_data=optimum_data
                 )
                 mip_results.append(mip_res)
                 all_results.append(mip_res)
@@ -698,7 +916,8 @@ def main():
                     inst,
                     time_limit=args.time_limit,
                     verbose=args.verbose,
-                    quiet=args.quiet
+                    quiet=args.quiet,
+                    optimum_data=optimum_data
                 )
                 cp_results.append(cp_res)
                 all_results.append(cp_res)
@@ -734,27 +953,26 @@ def main():
             export_results_json(all_results, args.export_json)
 
         # Print summary
-        if not args.quiet:
-            total_elapsed = time.time() - start_total
+        total_elapsed = time.time() - start_total
+        
+        if args.solver == "both":
+            logger.info("\n" + "=" * 80)
+            logger.info("SOLVER SUMMARY")
+            logger.info("=" * 80)
             
-            if args.solver == "both":
-                print("\n" + "=" * 80)
-                print("SOLVER SUMMARY")
-                print("=" * 80)
-                
-                mip_solved = sum(1 for r in mip_results if r["makespan"] is not None)
-                cp_solved = sum(1 for r in cp_results if r["makespan"] is not None)
-                mip_optimal = sum(1 for r in mip_results if r["optimal"])
-                cp_optimal = sum(1 for r in cp_results if r["optimal"])
-                
-                print(f"MIP Solver: {mip_solved}/{len(instances)} solved, {mip_optimal} optimal")
-                print(f"CP Solver:  {cp_solved}/{len(instances)} solved, {cp_optimal} optimal")
-            else:
-                solved = sum(1 for r in all_results if r["makespan"] is not None)
-                optimal = sum(1 for r in all_results if r["optimal"])
-                print(f"\nSolved: {solved}/{len(instances)} instances, {optimal} optimal")
+            mip_solved = sum(1 for r in mip_results if r["makespan"] is not None)
+            cp_solved = sum(1 for r in cp_results if r["makespan"] is not None)
+            mip_optimal = sum(1 for r in mip_results if r["optimal"])
+            cp_optimal = sum(1 for r in cp_results if r["optimal"])
             
-            print(f"Total time: {total_elapsed:.2f}s")
+            logger.info(f"MIP Solver: {mip_solved}/{len(instances)} solved, {mip_optimal} optimal")
+            logger.info(f"CP Solver:  {cp_solved}/{len(instances)} solved, {cp_optimal} optimal")
+        else:
+            solved = sum(1 for r in all_results if r["makespan"] is not None)
+            optimal = sum(1 for r in all_results if r["optimal"])
+            logger.info(f"\nSolved: {solved}/{len(instances)} instances, {optimal} optimal")
+        
+        logger.info(f"Total time: {total_elapsed:.2f}s")
         
         # Export results if requested
         if args.output:
@@ -762,12 +980,12 @@ def main():
         
     except KeyboardInterrupt:
         total_elapsed = time.time() - start_total
-        print(f"\n\n⚠ Interrupted by user (Ctrl+C)")
-        print(f"Completed {len(all_results)} instance(s) in {total_elapsed:.2f}s")
+        logger.warning(f"\n\n⚠ Interrupted by user (Ctrl+C)")
+        logger.warning(f"Completed {len(all_results)} instance(s) in {total_elapsed:.2f}s")
         
         if all_results:
             solved = sum(1 for r in all_results if r["makespan"] is not None)
-            print(f"Solved before interruption: {solved}")
+            logger.warning(f"Solved before interruption: {solved}")
         
         sys.exit(1)
 
