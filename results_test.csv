@@ -1,0 +1,3 @@
+instance,solver,status,makespan,optimum,optimality_gap,time,optimal,schedule_valid,timestamp
+ft06,MIP,Optimal,55.0,55,0.0,0.38074636459350586,True,True,2026-01-05T13:48:23.545465
+ft06,CP,Optimal,55,55,0.0,0.03603553771972656,True,True,2026-01-05T13:48:23.545465
