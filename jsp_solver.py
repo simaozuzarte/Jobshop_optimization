@@ -8,6 +8,7 @@ import argparse
 import os
 import glob
 import sys
+from pathlib import Path
 import json
 import csv
 import logging
@@ -16,6 +17,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 from tabulate import tabulate
+
 
 # Import solver modules
 from mip_solver import solve_mip_instance
@@ -30,16 +32,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
-# Create a custom logger that respects quiet mode
-class QuietFilter(logging.Filter):
-    def __init__(self, quiet=False):
-        self.quiet = quiet
-    
-    def filter(self, record):
-        return not self.quiet
-
-quiet_filter = QuietFilter()
 
 
 def parse_arguments():
@@ -485,11 +477,11 @@ def main():
     """Main entry point for the JSP solver."""
     args = parse_arguments()
     
-    # Configure logging based on quiet flag
+        # Configure logging based on quiet flag
     if args.quiet:
-        logger.setLevel(logging.WARNING)
+        logging.getLogger().setLevel(logging.WARNING)
     else:
-        logger.setLevel(logging.INFO)
+        logging.getLogger().setLevel(logging.INFO)
     
     # Load optimum values from instances.json
     optimum_data = load_optimum_values()
@@ -519,8 +511,6 @@ def main():
     start_total = time.time()
     
     try:
-        quiet_filter.quiet = args.quiet
-        logger.addFilter(quiet_filter)
         
         # Solve each instance with selected solver(s)
         for idx, inst in enumerate(instances, 1):
@@ -539,11 +529,10 @@ def main():
                     gap=args.gap,
                     verbose=args.verbose,
                     optimum=optimum,
-                    quiet_filter=quiet_filter
                 )
                 
                 # Validate schedule
-                if mip_res.get("schedule"):
+                if mip_res and mip_res.get("schedule"):
                     is_valid, violations = validate_schedule(
                         mip_res["schedule"], n_jobs, n_machines, jobs, p
                     )
@@ -562,11 +551,10 @@ def main():
                     time_limit=args.time_limit,
                     verbose=args.verbose,
                     optimum=optimum,
-                    quiet_filter=quiet_filter
                 )
                 
                 # Validate schedule
-                if cp_res.get("schedule"):
+                if cp_res and cp_res.get("schedule"):
                     is_valid, violations = validate_schedule(
                         cp_res["schedule"], n_jobs, n_machines, jobs, p
                     )
@@ -640,7 +628,7 @@ def main():
         
         sys.exit(1)
     finally:
-        logger.removeFilter(quiet_filter)
+        pass
 
 
 if __name__ == "__main__":
