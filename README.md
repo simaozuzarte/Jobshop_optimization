@@ -178,22 +178,26 @@ Settings: solver=both, time_limit=300s, gap=10.0%
 --------------------------------------------------------------------------------
 
 [1/2] Solving: JSPLIB/instances/abz5
-  [MIP] Reading instance and building model...
-  [MIP] Model: 150 variables, 300 constraints
+Model: 150 variables, 300 constraints
+
+  [MIP] Reading instance and building model from JSPLIB/instances/abz5
   [MIP] Solving with CBC (time limit: 300s, gap: 10.0%)...
-[MIP] Status: Optimal | Makespan: 1234 | Time: 45.23s
-  [CP] Reading instance and building model...
+  ✓ [MIP] Finished in 45.23s | Status: Optimal | Makespan: 1234.00 | Optimum: 1234.00 | Gap: 0.00%
+
+  [CP] Reading instance and building model from JSPLIB/instances/abz5
   [CP] Solving with OR-Tools CP-SAT (time limit: 300s)...
-  ✓ [CP] Finished in 23.45s - Makespan: 1234 - Status: Optimal
+  ✓ [CP] Finished in 23.45s | Status: Optimal | Makespan: 1234.00 | Optimum: 1234.00 | Gap: 0.00%
 
 [2/2] Solving: JSPLIB/instances/ft06
-  [MIP] Reading instance and building model...
-  [MIP] Model: 42 variables, 84 constraints
+Model: 112 variables, 186 constraints
+
+  [MIP] Reading instance and building model from JSPLIB/instances/ft06
   [MIP] Solving with CBC (time limit: 300s, gap: 10.0%)...
-[MIP] Status: Optimal | Makespan: 55 | Time: 2.15s
-  [CP] Reading instance and building model...
+  ✓ [MIP] Finished in 2.15s | Status: Optimal | Makespan: 55.00 | Optimum: 55.00 | Gap: 0.00%
+
+  [CP] Reading instance and building model from JSPLIB/instances/ft06
   [CP] Solving with OR-Tools CP-SAT (time limit: 300s)...
-  ✓ [CP] Finished in 1.82s - Makespan: 55 - Status: Optimal
+  ✓ [CP] Finished in 1.82s | Status: Optimal | Makespan: 55.00 | Optimum: 55.00 | Gap: 0.00%
 
 ================================================================================
 SOLVER SUMMARY

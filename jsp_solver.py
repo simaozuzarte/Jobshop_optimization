@@ -433,18 +433,17 @@ def solve_mip_instance(file_path, time_limit=300, gap=0.1, verbose=True, quiet=F
     quiet_filter.quiet = quiet
     logger.addFilter(quiet_filter)
     
-    try:
-        logger.info(f"[MIP] Reading instance and building model from {file_path}")
-        
+    try:        
         n_jobs, n_machines, jobs, p = read_jsplib_instance(file_path)
         prob, C_max, S, x, bounds = build_mip_model(n_jobs, n_machines, jobs, p)
 
         # Count constraints and variables for progress info
         n_vars = len(prob.variables())
         n_constraints = len(prob.constraints)
-        logger.info(f"[MIP] Model: {n_vars} variables, {n_constraints} constraints")
-        logger.debug(f"[MIP] Time bounds: LB={bounds['lower_bound']}, UB={bounds['upper_bound']}, Big-M={bounds['big_M']}")
-        logger.info(f"[MIP] Solving with CBC (time limit: {time_limit}s, gap: {gap*100:.1f}%)...")
+        logger.info(f"Model: {n_vars} variables, {n_constraints} constraints")
+        logger.info(f"\n  [MIP] Reading instance and building model from {file_path}")
+        logger.debug(f"  [MIP] Time bounds: LB={bounds['lower_bound']}, UB={bounds['upper_bound']}, Big-M={bounds['big_M']}")
+        logger.info(f"  [MIP] Solving with CBC (time limit: {time_limit}s, gap: {gap*100:.1f}%)...")
 
         solver = PULP_CBC_CMD(msg=verbose, timeLimit=time_limit, gapRel=gap)
 
@@ -482,12 +481,13 @@ def solve_mip_instance(file_path, time_limit=300, gap=0.1, verbose=True, quiet=F
         instance_info = get_instance_optimum(file_path, optimum_data)
         optimum = instance_info.get('optimum')
         optimality_gap = None
+        status_symbol = "✓" if status in ["Optimal", "Feasible"] else "✗"
         
         if optimum is not None and makespan is not None:
             optimality_gap = ((makespan - optimum) / optimum) * 100
-            logger.info(f"[MIP] Status: {status} | Makespan: {makespan} | Optimum: {optimum} | Gap: {optimality_gap:.2f}% | Time: {runtime:.2f}s")
+            logger.info(f"  {status_symbol} [MIP] Finished in {runtime:.2f}s | Status: {status} | Makespan: {makespan:.2f} | Optimum: {optimum:.2f} | Gap: {optimality_gap:.2f}%")
         else:
-            logger.info(f"[MIP] Status: {status} | Makespan: {makespan} | Time: {runtime:.2f}s")
+            logger.info(f"  {status_symbol} [MIP] Finished in {runtime:.2f}s | Status: {status} | Makespan: {makespan}")
 
         return {
             "instance": file_path,
@@ -514,12 +514,12 @@ def solve_cp_instance(file_path, time_limit=300, verbose=True, quiet=False, opti
     logger.addFilter(quiet_filter)
     
     try:
-        logger.info(f"[CP] Reading instance and building model from {file_path}")
+        logger.info(f"\n  [CP] Reading instance and building model from {file_path}")
         
         n_jobs, n_machines, jobs, p = read_jsplib_instance(file_path)
         model, makespan_var, starts, ends = build_cp_model(n_jobs, n_machines, jobs, p)
         
-        logger.info(f"[CP] Solving with OR-Tools CP-SAT (time limit: {time_limit}s)...")
+        logger.info(f"  [CP] Solving with OR-Tools CP-SAT (time limit: {time_limit}s)...")
         
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = time_limit
@@ -573,15 +573,14 @@ def solve_cp_instance(file_path, time_limit=300, verbose=True, quiet=False, opti
         instance_info = get_instance_optimum(file_path, optimum_data)
         optimum = instance_info.get('optimum')
         optimality_gap = None
+        status_symbol = "✓" if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else "✗"
         
         if optimum is not None and makespan is not None:
             optimality_gap = ((makespan - optimum) / optimum) * 100
-            status_symbol = "✓" if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else "✗"
-            logger.info(f"{status_symbol} [CP] Finished in {runtime:.2f}s - Makespan: {makespan} - Optimum: {optimum} - Gap: {optimality_gap:.2f}% - Status: {status_str}")
+            logger.info(f"  {status_symbol} [CP] Finished in {runtime:.2f}s | Status: {status_str} | Makespan: {makespan:.2f} | Optimum: {optimum:.2f} | Gap: {optimality_gap:.2f}%")
         else:
-            status_symbol = "✓" if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else "✗"
-            logger.info(f"{status_symbol} [CP] Finished in {runtime:.2f}s - Makespan: {makespan if makespan else 'N/A'} - Status: {status_str}")
-        
+            logger.info(f"  {status_symbol} [CP] Finished in {runtime:.2f}s | Status: {status_str} | Makespan: {makespan if makespan else 'N/A'}")
+
         return {
             "instance": file_path,
             "solver": "CP",
@@ -929,7 +928,7 @@ def main():
             comparison_data = compare_solvers(mip_results, cp_results)
             print_comparison_table(comparison_data)
         
-                # Generate Gantt charts if requested
+        # Generate Gantt charts if requested
         if args.gantt:
             for result in all_results:
                 if result.get("schedule") and result.get("makespan"):
