@@ -1,0 +1,5 @@
+instance,solver,status,makespan,optimum,optimality_gap,time,optimal,schedule_valid,timestamp
+ft06,CP-BASIC,Optimal,55,55,0.0,0.05119824409484863,True,True,2026-01-05T17:26:35.443875
+ft06,CP-COMPACT,Optimal,55,55,0.0,0.03563523292541504,True,True,2026-01-05T17:26:35.443875
+ft10,CP-BASIC,Optimal,930,930,0.0,4.236192226409912,True,True,2026-01-05T17:26:35.443875
+ft10,CP-COMPACT,Optimal,930,930,0.0,4.681040287017822,True,True,2026-01-05T17:26:35.443875
