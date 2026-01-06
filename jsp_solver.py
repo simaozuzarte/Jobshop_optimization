@@ -143,7 +143,7 @@ def read_jsplib_instance(file_path):
         job_pairs = []
 
         for i in range(0, len(numbers), 2):
-            m = numbers[i] - 1  # Convert to 0-based index
+            m = numbers[i]
             d = numbers[i + 1]
             job_pairs.append((m, d))
             p[(j, m)] = d
@@ -477,7 +477,7 @@ def main():
     """Main entry point for the JSP solver."""
     args = parse_arguments()
     
-        # Configure logging based on quiet flag
+    # Configure logging based on quiet flag
     if args.quiet:
         logging.getLogger().setLevel(logging.WARNING)
     else:

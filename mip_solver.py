@@ -126,6 +126,13 @@ def solve_mip_instance(file_path, n_jobs, n_machines, jobs, p,
     status = LpStatus[prob.status]
     makespan = C_max.varValue if status in ["Optimal", "Feasible"] else None
 
+    # If we have a known optimum, check if the makespan actually equals the optimum
+    if optimum is not None and makespan is not None:
+        epsilon = 1e-6
+        if abs(makespan - optimum) > epsilon:
+            # Makespan differs from known optimum, so not truly optimal
+            status = "Feasible"
+
     # Extract schedule if solution found
     schedule = []
     for (j, m), var in S.items():
