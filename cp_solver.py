@@ -184,6 +184,13 @@ def solve_cp_instance(file_path, n_jobs, n_machines, jobs, p,
     
     makespan = solver.Value(makespan_var) if status in [cp_model.OPTIMAL, cp_model.FEASIBLE] else None
     
+    # If we have a known optimum, check if the makespan actually equals the optimum
+    if optimum is not None and makespan is not None:
+        epsilon = 1e-6
+        if abs(makespan - optimum) > epsilon:
+            # Makespan differs from known optimum, so not truly optimal
+            status_str = "Feasible"
+    
     # Extract schedule if solution found
     schedule = None
     if makespan is not None:
