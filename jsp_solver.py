@@ -21,12 +21,13 @@ from tabulate import tabulate
 from mip_solver import solve_mip_instance
 from cp_solver import solve_cp_instance
 
-# Configure logging
+# Configure logging with UTF-8 encoding support
+import io
 logging.basicConfig(
     level=logging.INFO,
     format='%(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler(io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace'))
     ]
 )
 logger = logging.getLogger(__name__)
@@ -54,6 +55,8 @@ Examples:
   python jsp_solver.py -p "JSPLIB/instances/la*" --time-limit 60
   python jsp_solver.py -p "JSPLIB/instances/ft*" --gap 0.05 --verbose
   python jsp_solver.py -i JSPLIB/instances/ft06 --solver both --compare
+  python jsp_solver.py -i JSPLIB/instances/ft06 --solver cp --cp-variant compact
+  python jsp_solver.py -i JSPLIB/instances/abz5 --solver cp --cp-variant both --cp-workers 4
         """
     )
     
@@ -76,6 +79,22 @@ Examples:
         choices=["mip", "cp", "both"],
         default="both",
         help="Solver to use: mip (MIP), cp (CP-SAT), or both (default: both)"
+    )
+
+    # CP variant selection
+    parser.add_argument(
+        "--cp-variant",
+        choices=["basic", "compact", "both"],
+        default="basic",
+        help="CP-SAT model variant: basic (standard), compact (enhanced), or both (default: basic)"
+    )
+
+    # CP solver parameters
+    parser.add_argument(
+        "--cp-workers",
+        type=int,
+        default=8,
+        help="Number of parallel workers for CP-SAT (default: 8)"
     )
 
     # Comparison and output
@@ -311,13 +330,13 @@ def compare_solvers(results_mip, results_cp):
             "Instance": instance_name,
             "MIP Status": mip_res["status"],
             "MIP Makespan": mip_res["makespan"],
-            "MIP Gap %": f"{mip_res['optimality_gap']:.2f}" if mip_res.get('optimality_gap') is not None else "N/A",
-            "MIP Time (s)": f"{mip_res['time']:.2f}",
+            "MIP Gap %": mip_res.get('optimality_gap'),
+            "MIP Time (s)": mip_res.get('time'),
             "CP Status": cp_res["status"],
             "CP Makespan": cp_res["makespan"],
-            "CP Gap %": f"{cp_res['optimality_gap']:.2f}" if cp_res.get('optimality_gap') is not None else "N/A",
-            "CP Time (s)": f"{cp_res['time']:.2f}",
-            "Makespan Diff %": f"{makespan_diff:.2f}" if makespan_diff is not None else "N/A",
+            "CP Gap %": cp_res.get('optimality_gap'),
+            "CP Time (s)": cp_res.get('time'),
+            "Makespan Diff %": makespan_diff,
             "Better Solver": better_solver if better_solver else "N/A"
         })
     
@@ -330,30 +349,45 @@ def print_comparison_table(comparison_data):
         logger.info("No comparison data available.")
         return
     
-    headers = ["Instance", "MIP Status", "MIP Makespan", "MIP Gap %", "MIP Time (s)", 
-               "CP Status", "CP Makespan", "CP Gap %", "CP Time (s)", "Makespan Diff %", "Better Solver"]
-    
-    # Convert to list of lists for tabulate
+    def fmt(val, decimals=2):
+        if val is None:
+            return "—"
+        if isinstance(val, (int, float)):
+            return f"{val:.{decimals}f}"
+        return val
+
+    headers = [
+        "Instance", "MIP Status", "MIP Mksp", "MIP Gap %", "MIP Time (s)",
+        "CP Status", "CP Mksp", "CP Gap %", "CP Time (s)", "Diff %", "Better"
+    ]
+
     table_data = []
     for row in comparison_data:
         table_data.append([
             row["Instance"],
             row["MIP Status"],
-            row["MIP Makespan"] if row["MIP Makespan"] is not None else "N/A",
-            row["MIP Gap %"],
-            row["MIP Time (s)"],
+            fmt(row.get("MIP Makespan")),
+            fmt(row.get("MIP Gap %")),
+            fmt(row.get("MIP Time (s)")),
             row["CP Status"],
-            row["CP Makespan"] if row["CP Makespan"] is not None else "N/A",
-            row["CP Gap %"],
-            row["CP Time (s)"],
-            row["Makespan Diff %"],
-            row["Better Solver"]
+            fmt(row.get("CP Makespan")),
+            fmt(row.get("CP Gap %")),
+            fmt(row.get("CP Time (s)")),
+            fmt(row.get("Makespan Diff %")),
+            row.get("Better Solver", "N/A")
         ])
-    
-    logger.info("\n" + "=" * 140)
-    logger.info("SOLVER COMPARISON TABLE")
-    logger.info("=" * 140)
-    logger.info("\n" + tabulate(table_data, headers=headers, tablefmt="grid"))
+
+    table_str = tabulate(
+        table_data,
+        headers=headers,
+        tablefmt="github",
+        floatfmt=".2f",
+        stralign="center",
+        numalign="center"
+    )
+
+    logger.info("\nSOLVER COMPARISON TABLE")
+    logger.info(table_str)
     
     # Summary statistics
     mip_solved = sum(1 for row in comparison_data if row["MIP Makespan"] is not None)
@@ -369,7 +403,7 @@ def print_comparison_table(comparison_data):
     logger.info(f"  Equal makespan:          {len(comparison_data) - mip_better - cp_better}")
 
 
-def export_results_csv(results, filename="results.csv"):
+def export_results_csv(results, filename="output/results.csv"):
     """Export results to CSV file."""
     if not results:
         return
@@ -397,7 +431,7 @@ def export_results_csv(results, filename="results.csv"):
     logger.info(f"  ✓ Results exported to {filename}")
 
 
-def export_results_json(results, filename="results.json"):
+def export_results_json(results, filename="output/results.json"):
     """Export results to JSON file."""
     if not results:
         return
@@ -557,26 +591,36 @@ def main():
 
             # Solve with CP if requested
             if args.solver in ["cp", "both"]:
-                cp_res = solve_cp_instance(
-                    inst, n_jobs, n_machines, jobs, p,
-                    time_limit=args.time_limit,
-                    verbose=args.verbose,
-                    optimum=optimum,
-                    quiet_filter=quiet_filter
-                )
+                # Determine which variants to solve
+                cp_variants = []
+                if args.cp_variant == "both":
+                    cp_variants = ["basic", "compact"]
+                else:
+                    cp_variants = [args.cp_variant]
                 
-                # Validate schedule
-                if cp_res.get("schedule"):
-                    is_valid, violations = validate_schedule(
-                        cp_res["schedule"], n_jobs, n_machines, jobs, p
+                # Solve with selected variant(s)
+                for variant in cp_variants:
+                    cp_res = solve_cp_instance(
+                        inst, n_jobs, n_machines, jobs, p,
+                        time_limit=args.time_limit,
+                        verbose=args.verbose,
+                        optimum=optimum,
+                        variant=variant,
+                        num_workers=args.cp_workers
                     )
-                    cp_res["schedule_valid"] = is_valid
-                    cp_res["validation_violations"] = violations if not is_valid else None
-                    if not is_valid:
-                        logger.warning(f"[CP] Schedule validation failed with {len(violations)} violations")
-                
-                cp_results.append(cp_res)
-                all_results.append(cp_res)
+                    
+                    # Validate schedule
+                    if cp_res.get("schedule"):
+                        is_valid, violations = validate_schedule(
+                            cp_res["schedule"], n_jobs, n_machines, jobs, p
+                        )
+                        cp_res["schedule_valid"] = is_valid
+                        cp_res["validation_violations"] = violations if not is_valid else None
+                        if not is_valid:
+                            logger.warning(f"[{cp_res['solver']}] Schedule validation failed with {len(violations)} violations")
+                    
+                    cp_results.append(cp_res)
+                    all_results.append(cp_res)
         
         # Generate comparison if both solvers were used
         comparison_data = None

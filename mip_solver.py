@@ -25,7 +25,7 @@ def compute_time_bounds(n_jobs, n_machines, jobs, p):
     upper_bound = sum(p.values())
     
     # Big-M for disjunctive constraints
-    big_M = upper_bound  # Conservative but valid
+    big_M = upper_bound
     
     # Tighter Big-M: upper_bound - min_processing_time
     if p:
