@@ -3,9 +3,9 @@
 A hybrid solver for the **Job Shop Scheduling Problem (JSP)** using Python, implementing both Mixed Integer Programming (MIP) and Constraint Programming (CP) approaches. This project minimizes the makespan (total completion time) for scheduling jobs across multiple machines.
 
 #### Team:
-- Daniel Dória Pinto - up202108808@up.pt
-- Leonor Filipe - up202204354@up.pt  
-- Simão Zuzarte Bernardo - up202502529@up.pt
+- Daniel Dória Pinto [danieldoria1305](https://github.com/danieldoria1305)
+- Leonor Filipe - [@leonor-f](https://github.com/leonor-f)
+- Simão Zuzarte Bernardo - [@simaozuzarte](https://github.com/simaozuzarte)
 
 
 ## Table of Contents
@@ -483,35 +483,6 @@ The JSPLIB library includes **130+ benchmark instances** from the literature:
 | YN     | 4     | 20×20 | Yamada & Nakano (1992) |
 
 Check `JSPLIB/instances.json` for known optimum values and bounds.
-
-
-## ✅ TODOs
-
-- [x] **Rename `test.py` → `jsp_solver.py`** - More descriptive name
-- [x] **Add command-line argument parsing** - Use `argparse` to specify instances, time limits, etc.
-- [x] **Improve Big-M calculation** - Currently hardcoded as 10000; should be computed dynamically
-- [x] **Add solution validation** - Verify that the solution respects all constraints
-- [x] **Export schedule visualization** - Generate Gantt charts for the solution
-
-### Medium Priority
-- [x] **Add logging module** - Replace `print()` with proper logging
-- [x] **Load optimum values from `instances.json`** - Compare solver results with known optima
-- [x] **Calculate optimality gap** - Report `(found - optimum) / optimum × 100%`
-- [x] **Save results to CSV/JSON** - Export batch results for analysis
-- [x] **Add solution extraction** - Output the actual schedule (start times per operation)
-- [x] **Document MIP and CP models** - Full mathematical formulation with bounds and constraints
-- [x] **Create CP constraint variants** - Compare basic vs. compact formulations
-- [x] **Add comprehensive test batch** - Run representative instances and analyze results
-
-### Low Priority / Enhancements
-- [ ] **Implement warm-start** - Use heuristic solutions (e.g., SPT, LPT) as initial solution
-- [ ] **Add alternative solvers** - Support Gurobi, CPLEX, or HiGHS
-- [ ] **Implement valid inequalities** - Add cuts to strengthen the formulation
-- [ ] **Add unit tests** - Test parsing, model building, and solving
-- [ ] **Create configuration file** - YAML/JSON config for solver parameters
-- [ ] **Add progress callback** - Report intermediate solutions during solving
-- [ ] **Parallelize solving** - Solve multiple instances concurrently
-
 
 ## Experimental Results and Analysis
 
