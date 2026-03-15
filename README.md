@@ -3,7 +3,7 @@
 A hybrid solver for the **Job Shop Scheduling Problem (JSP)** using Python, implementing both Mixed Integer Programming (MIP) and Constraint Programming (CP) approaches. This project minimizes the makespan (total completion time) for scheduling jobs across multiple machines.
 
 #### Team:
-- Daniel Dória Pinto [danieldoria1305](https://github.com/danieldoria1305)
+- Daniel Dória Pinto [@danieldoria1305](https://github.com/danieldoria1305)
 - Leonor Filipe - [@leonor-f](https://github.com/leonor-f)
 - Simão Zuzarte Bernardo - [@simaozuzarte](https://github.com/simaozuzarte)
 
